@@ -51,7 +51,7 @@ function Get-Performed-Action {
 function Update-Paper {
     $ProgressPreference = 'SilentlyContinue'
 
-    $versionGroup = "1.17"
+    $versionGroup = "1.18"
     $versionGroupURL = "https://papermc.io/api/v2/projects/paper/version_group/$versionGroup"
 
     # Write-Host "Getting version group info for $versionGroup..."
@@ -118,10 +118,10 @@ function Start-Server {
         $windowTitle
     )
 
-    $java = "C:\Program Files\AdoptOpenJDK\jdk-16.0.1.9-hotspot\bin\java.exe"
+    $java = "C:\Program Files\Eclipse Adoptium\jdk-17.0.1.12-hotspot\bin\java.exe"
 
     while($true) {
-        & $java -Xms1024M -Xmx1024M -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui
+        & $java -Xms2048M -Xmx2048M -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui
         $initialAction = Get-Performed-Action -delay 8 -default 'S'
         Write-Host $initialAction
         if ($initialAction -eq 'U') {

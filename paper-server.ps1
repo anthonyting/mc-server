@@ -49,9 +49,12 @@ function Get-Performed-Action {
 }
 
 function Update-Paper {
+    param (
+        $versionGroup
+    )
+
     $ProgressPreference = 'SilentlyContinue'
 
-    $versionGroup = "1.18"
     $versionGroupURL = "https://papermc.io/api/v2/projects/paper/version_group/$versionGroup"
 
     # Write-Host "Getting version group info for $versionGroup..."
@@ -102,11 +105,12 @@ function Update-Plugin {
 
 function Update-All {
     param (
-        $windowTitle
+        $windowTitle,
+        $versionGroup
     )
 
     $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-    Update-Paper
+    Update-Paper $versionGroup
     Update-Plugin -baseURL "https://ci.lucko.me/view/LuckPerms/job/LuckPerms" -pluginName "LuckPerms"
     Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsX"
     Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsXChat"
@@ -115,18 +119,29 @@ function Update-All {
 
 function Start-Server {
     param (
-        $windowTitle
+        $windowTitle,
+        $versionGroup,
+        $java
     )
 
-    $java = "C:\Program Files\Eclipse Adoptium\jdk-17.0.1.12-hotspot\bin\java.exe"
-
     while($true) {
-        & $java -Xms2048M -Xmx2048M -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui
-        $initialAction = Get-Performed-Action -delay 8 -default 'S'
+        & $java -Xms4G -Xmx4G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui
+
+        if ($LASTEXITCODE -eq 0) {
+            $defaultAction = 'U'
+        } else {
+            Write-Host "Server exited with exit code: $LASTEXITCODE"
+            $defaultAction = 'E'
+        }
+
+        $initialAction = Get-Performed-Action -delay 8 -default $defaultAction
         Write-Host $initialAction
         if ($initialAction -eq 'U') {
-            Update-All $windowTitle
+            Update-All $windowTitle $versionGroup
         } elseif ($initialAction -eq 'E') {
+            if ($defaultAction -eq 'E') {
+                Read-Host -Prompt "Press enter to exit"
+            }
             return
         }
     }
@@ -136,14 +151,30 @@ function Main {
     $windowTitle = "PaperServer"
     $Host.UI.RawUI.WindowTitle = $windowTitle
 
+    $settingsPath = "./settings.json"
+    if (-not(Test-Path -Path $settingsPath -PathType Leaf)) {
+        Copy-Item -Path "./settings.default.json" -Destination $settingsPath
+    }
+
+    $settingsText = Get-Content -Path $settingsPath
+    
+    try {
+        $settings = $settingsText | ConvertFrom-Json
+        [version] $settings.version | Out-Null
+    } catch {
+        Write-Host $_.Exception.Message
+        return
+    }
+
     $initialAction = Get-Performed-Action -delay 2 -default 'U'
     if ($initialAction -eq 'U') {
         $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-        Update-All $windowTitle
+        Update-All $windowTitle $settings.version
     } elseif ($initialAction -eq 'E') {
         return
     }
-    Start-Server $windowTitle
+
+    Start-Server $windowTitle $settings.version $settings.java
 }
 
 Main

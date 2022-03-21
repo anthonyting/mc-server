@@ -121,11 +121,14 @@ function Start-Server {
     param (
         $windowTitle,
         $versionGroup,
-        $java
+        $java,
+        $memory
     )
 
     while($true) {
-        & $java -Xms4G -Xmx4G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui
+
+        $javaArgs = "-Xms$memory -Xmx$memory -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=35 -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -jar paper.jar nogui"
+        & $java $javaArgs.split(" ")
 
         if ($LASTEXITCODE -eq 0) {
             $defaultAction = 'U'
@@ -174,7 +177,7 @@ function Main {
         return
     }
 
-    Start-Server $windowTitle $settings.version $settings.java
+    Start-Server $windowTitle $settings.version $settings.java $settings.memory
 }
 
 Main

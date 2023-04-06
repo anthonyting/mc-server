@@ -1,5 +1,6 @@
 {
   "java": "java",
   "version": "1.18",
-  "memory": "2G"
+  "memory": "2G",
+  "debug": false
 }

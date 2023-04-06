@@ -74,6 +74,23 @@ function Update-Paper {
 	Move-Item -Path "./downloading/paper_downloading" -Destination "paper.jar" -Force
 }
 
+function Update-Spigot {
+    # Get BuildTools.jar if it doesn't exist
+    if (!(Test-Path "BuildTools.jar")) {
+        Write-Host "Downloading BuildTools.jar..."
+        Invoke-WebRequest "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" -OutFile "BuildTools.jar"
+    }
+
+    # Run BuildTools.jar if spigot.jar doesn't exist
+
+    if (!(Test-Path "spigot.jar")) {
+        Write-Host "Running BuildTools.jar..."
+        & "java" -jar BuildTools.jar
+        # Move spigot.jar to root
+        Move-Item -Path "spigot-*.jar" -Destination "spigot.jar" -Force
+    }
+}
+
 function Update-Plugin {
     param (
         $baseURL,
@@ -106,11 +123,17 @@ function Update-Plugin {
 function Update-All {
     param (
         $windowTitle,
-        $versionGroup
+        $versionGroup,
+        $debug
     )
 
     $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-    Update-Paper $versionGroup
+    if ($debug) {
+        Write-Host "Debug mode: using Spigot instead of Paper"
+        Update-Spigot
+    } else {
+        Update-Paper $versionGroup
+    }
     Update-Plugin -baseURL "https://ci.lucko.me/view/LuckPerms/job/LuckPerms" -pluginName "LuckPerms"
     Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsX"
     Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsXChat"
@@ -122,12 +145,25 @@ function Start-Server {
         $windowTitle,
         $versionGroup,
         $java,
-        $memory
+        $memory,
+        $debug
     )
 
     while($true) {
 
-        $javaArgs = "-Xms$memory -Xmx$memory -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -jar paper.jar nogui"
+        $softwareJar = if ($debug) {
+            "spigot.jar"
+        } else {
+            "paper.jar"
+        }
+
+        $javaArgs = "-Xms$memory -Xmx$memory -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -jar $softwareJar nogui"
+
+        if ($debug) {
+            Write-Host "Starting server in debug mode..."
+            $javaArgs = " -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005 -DIReallyKnowWhatIAmDoingISwear -XX:+AllowEnhancedClassRedefinition -XX:HotswapAgent=fatjar " + $javaArgs
+        }
+
         & $java $javaArgs.split(" ")
 
         if ($LASTEXITCODE -eq 0) {
@@ -140,10 +176,10 @@ function Start-Server {
         $initialAction = Get-Performed-Action -delay 8 -default $defaultAction
         Write-Host $initialAction
         if ($initialAction -eq 'U') {
-            Update-All $windowTitle $versionGroup
+            Update-All $windowTitle $versionGroup $debug
         } elseif ($initialAction -eq 'E') {
             if ($defaultAction -eq 'E') {
-                Read-Host -Prompt "Press enter to exit"
+                Read-Host -Prompt "Error detected, press enter to exit"
             }
             return
         }
@@ -172,12 +208,12 @@ function Main {
     $initialAction = Get-Performed-Action -delay 2 -default 'U'
     if ($initialAction -eq 'U') {
         $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-        Update-All $windowTitle $settings.version
+        Update-All $windowTitle $settings.version $settings.debug
     } elseif ($initialAction -eq 'E') {
         return
     }
 
-    Start-Server $windowTitle $settings.version $settings.java $settings.memory
+    Start-Server $windowTitle $settings.version $settings.java $settings.memory $settings.debug
 }
 
 Main

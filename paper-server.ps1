@@ -55,19 +55,19 @@ function Update-Paper {
 
     $ProgressPreference = 'SilentlyContinue'
 
-    $versionGroupURL = "https://papermc.io/api/v2/projects/paper/version_group/$versionGroup"
+    $versionGroupURL = "https://api.papermc.io/v2/projects/paper/version_group/$versionGroup"
 
     # Write-Host "Getting version group info for $versionGroup..."
     $versionGroupInfo = Invoke-RestMethod $versionGroupURL
     $highestVersion = (([version[]] $versionGroupInfo.versions) | Measure-Object -Maximum).Maximum
 
     # Write-Host "Getting build info for version $highestVersion.."
-    $buildsUrl = "https://papermc.io/api/v2/projects/paper/versions/$highestVersion"
+    $buildsUrl = "https://api.papermc.io/v2/projects/paper/versions/$highestVersion"
     $builds = Invoke-RestMethod $buildsUrl
     $highestBuild = ($builds.builds | Measure-Object -Maximum).Maximum
 
     Write-Host "Downloading paper build $highestBuild for version $highestVersion..."
-    $downloadURL = "https://papermc.io/api/v2/projects/paper/versions/$highestVersion/builds/$highestBuild/downloads/paper-$highestVersion-$highestBuild.jar"
+    $downloadURL = "https://api.papermc.io/v2/projects/paper/versions/$highestVersion/builds/$highestBuild/downloads/paper-$highestVersion-$highestBuild.jar"
     New-Item -Path "." -Name "downloading" -ItemType "directory" -Force > $null
 
     Invoke-WebRequest $downloadURL -Outfile "./downloading/paper_downloading"

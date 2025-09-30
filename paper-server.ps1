@@ -93,7 +93,6 @@ function Update-Paper {
     $projectUrl = "https://fill.papermc.io/v3/projects/paper";
     $project = Invoke-RestMethod $projectUrl
 
-    Write-Host $project.versions
     $versions = $project.versions.$versionGroup
     if ($null -eq $versions) {
         throw "No versions found for $versionGroup"

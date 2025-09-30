@@ -4,7 +4,7 @@ function Get-Performed-Action {
         $default
     )
 
-    switch($default) {
+    switch ($default) {
         'S' {
             $choices = "(S/u/e)"
             break
@@ -26,7 +26,7 @@ function Get-Performed-Action {
     $seconds = 0
     $keyPressed = $false
     $activity = "Start, Update, or Exit? $delay seconds to answer $choices"
-    while($seconds -lt ($delay + 1)) {
+    while ($seconds -lt ($delay + 1)) {
         if ([Console]::KeyAvailable) {
             $keyPressed = $true
             break   
@@ -48,6 +48,41 @@ function Get-Performed-Action {
     return
 }
 
+function Get-HighestVersion {
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [string[]]$Versions
+    )
+
+    process {
+        $validVersions = foreach ($v in $Versions) {
+            try {
+                # Skip all versions that can't be converted into version objects
+                # This includes things like -rc or -pre versions. I prefer more stable versions.
+                $versionObject = [version]$v
+
+                # Check each version and make sure it has a valid build
+                $versionInfoUrl = "https://fill.papermc.io/v3/projects/paper/versions/$v"
+                $versionInfo = Invoke-RestMethod $versionInfoUrl
+                if ($versionInfo.builds.Count -eq 0) {
+                    throw "$v has no valid builds"
+                }
+
+                $versionObject
+            }
+            catch {
+                Write-Warning "Skipped: '$v'. Error: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $validVersions) {
+            throw "No valid versions found in input."
+        }
+
+        ($validVersions | Measure-Object -Maximum).Maximum
+    }
+}
+
 function Update-Paper {
     param (
         $versionGroup
@@ -55,23 +90,27 @@ function Update-Paper {
 
     $ProgressPreference = 'SilentlyContinue'
 
-    $versionGroupURL = "https://api.papermc.io/v2/projects/paper/version_group/$versionGroup"
+    $projectUrl = "https://fill.papermc.io/v3/projects/paper";
+    $project = Invoke-RestMethod $projectUrl
 
-    # Write-Host "Getting version group info for $versionGroup..."
-    $versionGroupInfo = Invoke-RestMethod $versionGroupURL
-    $highestVersion = (([version[]] $versionGroupInfo.versions) | Measure-Object -Maximum).Maximum
+    Write-Host $project.versions
+    $versions = $project.versions.$versionGroup
+    if ($null -eq $versions) {
+        throw "No versions found for $versionGroup"
+    }
 
-    # Write-Host "Getting build info for version $highestVersion.."
-    $buildsUrl = "https://api.papermc.io/v2/projects/paper/versions/$highestVersion"
-    $builds = Invoke-RestMethod $buildsUrl
-    $highestBuild = ($builds.builds | Measure-Object -Maximum).Maximum
+    $highestVersion = Get-HighestVersion $versions
+
+    Write-Host "Getting build info for version $highestVersion.."
+    $latestBuildUrl = "https://fill.papermc.io/v3/projects/paper/versions/$highestVersion/builds/latest"
+    $latestBuildInfo = Invoke-RestMethod $latestBuildUrl
+    $downloadURL = $latestBuildInfo.downloads."server:default".url
 
     Write-Host "Downloading paper build $highestBuild for version $highestVersion..."
-    $downloadURL = "https://api.papermc.io/v2/projects/paper/versions/$highestVersion/builds/$highestBuild/downloads/paper-$highestVersion-$highestBuild.jar"
     New-Item -Path "." -Name "downloading" -ItemType "directory" -Force > $null
 
     Invoke-WebRequest $downloadURL -Outfile "./downloading/paper_downloading"
-	Move-Item -Path "./downloading/paper_downloading" -Destination "paper.jar" -Force
+    Move-Item -Path "./downloading/paper_downloading" -Destination "paper.jar" -Force
 }
 
 function Update-Spigot {
@@ -115,9 +154,9 @@ function Update-Plugin {
     $ProgressPreference = 'SilentlyContinue'
     Write-Host "Downloading from $downloadURL..."
     New-Item -Path "." -Name "downloading" -ItemType "directory" -Force > $null
-    Invoke-WebRequest $downloadURL -OutFile (-join("./downloading/", $pluginName, "_downloading"))
+    Invoke-WebRequest $downloadURL -OutFile ( -join ("./downloading/", $pluginName, "_downloading"))
     New-Item -Path "." -Name "plugins" -ItemType "directory" -Force > $null
-    Move-Item -Path (-join("./downloading/", $pluginName, "_downloading")) -Destination "./plugins/$pluginName.jar" -Force
+    Move-Item -Path ( -join ("./downloading/", $pluginName, "_downloading")) -Destination "./plugins/$pluginName.jar" -Force
 }
 
 function Update-All {
@@ -131,7 +170,8 @@ function Update-All {
     if ($debug) {
         Write-Host "Debug mode: using Spigot instead of Paper"
         Update-Spigot
-    } else {
+    }
+    else {
         Update-Paper $versionGroup
     }
     Update-Plugin -baseURL "https://ci.lucko.me/view/LuckPerms/job/LuckPerms" -pluginName "LuckPerms"
@@ -149,11 +189,12 @@ function Start-Server {
         $debug
     )
 
-    while($true) {
+    while ($true) {
 
         $softwareJar = if ($debug) {
             "spigot.jar"
-        } else {
+        }
+        else {
             "paper.jar"
         }
 
@@ -168,7 +209,8 @@ function Start-Server {
 
         if ($LASTEXITCODE -eq 0) {
             $defaultAction = 'U'
-        } else {
+        }
+        else {
             Write-Host "Server exited with exit code: $LASTEXITCODE"
             $defaultAction = 'E'
         }
@@ -177,7 +219,8 @@ function Start-Server {
         Write-Host $initialAction
         if ($initialAction -eq 'U') {
             Update-All $windowTitle $versionGroup $debug
-        } elseif ($initialAction -eq 'E') {
+        }
+        elseif ($initialAction -eq 'E') {
             if ($defaultAction -eq 'E') {
                 Read-Host -Prompt "Error detected, press enter to exit"
             }
@@ -200,7 +243,8 @@ function Main {
     try {
         $settings = $settingsText | ConvertFrom-Json
         [version] $settings.version | Out-Null
-    } catch {
+    }
+    catch {
         Write-Host $_.Exception.Message
         return
     }
@@ -209,7 +253,8 @@ function Main {
     if ($initialAction -eq 'U') {
         $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
         Update-All $windowTitle $settings.version $settings.debug
-    } elseif ($initialAction -eq 'E') {
+    }
+    elseif ($initialAction -eq 'E') {
         return
     }
 

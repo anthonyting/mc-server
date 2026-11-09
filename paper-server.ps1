@@ -48,136 +48,7 @@ function Get-Performed-Action {
     return
 }
 
-function Get-HighestVersion {
-    param(
-        [Parameter(Mandatory, ValueFromPipeline)]
-        [string[]]$Versions
-    )
-
-    process {
-        $validVersions = foreach ($v in $Versions) {
-            try {
-                # Skip all versions that can't be converted into version objects
-                # This includes things like -rc or -pre versions. I prefer more stable versions.
-                $versionObject = [version]$v
-
-                # Check each version and make sure it has a valid build
-                $versionInfoUrl = "https://fill.papermc.io/v3/projects/paper/versions/$v"
-                $versionInfo = Invoke-RestMethod $versionInfoUrl
-                if ($versionInfo.builds.Count -eq 0) {
-                    throw "$v has no valid builds"
-                }
-
-                $versionObject
-            }
-            catch {
-                Write-Warning "Skipped: '$v'. Error: $($_.Exception.Message)"
-            }
-        }
-
-        if (-not $validVersions) {
-            throw "No valid versions found in input."
-        }
-
-        ($validVersions | Measure-Object -Maximum).Maximum
-    }
-}
-
-function Update-Paper {
-    param (
-        $versionGroup
-    )
-
-    $ProgressPreference = 'SilentlyContinue'
-
-    $projectUrl = "https://fill.papermc.io/v3/projects/paper";
-    $project = Invoke-RestMethod $projectUrl
-
-    $versions = $project.versions.$versionGroup
-    if ($null -eq $versions) {
-        throw "No versions found for $versionGroup"
-    }
-
-    $highestVersion = Get-HighestVersion $versions
-
-    Write-Host "Getting build info for version $highestVersion.."
-    $latestBuildUrl = "https://fill.papermc.io/v3/projects/paper/versions/$highestVersion/builds/latest"
-    $latestBuildInfo = Invoke-RestMethod $latestBuildUrl
-    $downloadURL = $latestBuildInfo.downloads."server:default".url
-
-    Write-Host "Downloading paper build $highestBuild for version $highestVersion..."
-    New-Item -Path "." -Name "downloading" -ItemType "directory" -Force > $null
-
-    Invoke-WebRequest $downloadURL -Outfile "./downloading/paper_downloading"
-    Move-Item -Path "./downloading/paper_downloading" -Destination "paper.jar" -Force
-}
-
-function Update-Spigot {
-    # Get BuildTools.jar if it doesn't exist
-    if (!(Test-Path "BuildTools.jar")) {
-        Write-Host "Downloading BuildTools.jar..."
-        Invoke-WebRequest "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" -OutFile "BuildTools.jar"
-    }
-
-    # Run BuildTools.jar if spigot.jar doesn't exist
-
-    if (!(Test-Path "spigot.jar")) {
-        Write-Host "Running BuildTools.jar..."
-        & "java" -jar BuildTools.jar
-        # Move spigot.jar to root
-        Move-Item -Path "spigot-*.jar" -Destination "spigot.jar" -Force
-    }
-}
-
-function Update-Plugin {
-    param (
-        $baseURL,
-        $pluginName
-    )
-
-    $requestObject = Invoke-RestMethod "$baseURL/lastSuccessfulBuild/api/json"
-    $relPath = $null
-    foreach ($artifact in $requestObject.artifacts) {
-        if ($artifact.displayPath.StartsWith("$pluginName-")) {
-            $relPath = $artifact.relativePath
-            break
-        }
-    }
-    if ($null -eq $relPath) {
-        Write-Host "Error: $pluginName not found at $baseURL. Skipping..."
-        return
-    }
-
-    $downloadURL = "$baseURL/lastSuccessfulBuild/artifact/$relPath"
-
-    $ProgressPreference = 'SilentlyContinue'
-    Write-Host "Downloading from $downloadURL..."
-    New-Item -Path "." -Name "downloading" -ItemType "directory" -Force > $null
-    Invoke-WebRequest $downloadURL -OutFile ( -join ("./downloading/", $pluginName, "_downloading"))
-    New-Item -Path "." -Name "plugins" -ItemType "directory" -Force > $null
-    Move-Item -Path ( -join ("./downloading/", $pluginName, "_downloading")) -Destination "./plugins/$pluginName.jar" -Force
-}
-
-function Update-All {
-    param (
-        $windowTitle,
-        $versionGroup,
-        $debug
-    )
-
-    $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-    if ($debug) {
-        Write-Host "Debug mode: using Spigot instead of Paper"
-        Update-Spigot
-    }
-    else {
-        Update-Paper $versionGroup
-    }
-    Update-Plugin -baseURL "https://ci.lucko.me/view/LuckPerms/job/LuckPerms" -pluginName "LuckPerms"
-    Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsX"
-    Update-Plugin -baseURL "https://ci.ender.zone/job/EssentialsX" -pluginName "EssentialsXChat"
-    $Host.UI.RawUI.WindowTitle = $windowTitle
-}
+Import-Module (Join-Path $PSScriptRoot "ServerUpdates\ServerUpdates.psd1") -Force
 
 function Start-Server {
     param (
@@ -189,6 +60,7 @@ function Start-Server {
     )
 
     while ($true) {
+        Disable-PluginMetrics
 
         $softwareJar = if ($debug) {
             "spigot.jar"

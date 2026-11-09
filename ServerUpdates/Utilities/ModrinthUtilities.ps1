@@ -15,10 +15,12 @@ function Get-ModrinthPaperRelease {
     $loaderJson = ConvertTo-Json -InputObject @($paperLoader) -Compress
     $loaderFilter = [uri]::EscapeDataString($loaderJson)
     $versionsUrl = "https://api.modrinth.com/v2/project/$ProjectSlug/version?loaders=$loaderFilter"
-    $versions = Invoke-RestMethod `
-        -Uri $versionsUrl `
-        -Headers (Get-UpdateRequestHeaders) `
-        -ErrorAction Stop
+    $versions = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod `
+            -Uri $versionsUrl `
+            -Headers (Get-UpdateRequestHeaders) `
+            -ErrorAction Stop
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($VersionNumber)) {
         $version = $versions |

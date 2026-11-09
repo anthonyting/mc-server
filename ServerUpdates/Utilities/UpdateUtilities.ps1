@@ -56,6 +56,60 @@ function Get-UpdateRequestHeaders {
     }
 }
 
+function Get-UpdateHttpStatusCode {
+    param (
+        [Parameter(Mandatory)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        $responseProperty = $exception.PSObject.Properties["Response"]
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            $statusCodeProperty = $responseProperty.Value.PSObject.Properties["StatusCode"]
+            if ($null -ne $statusCodeProperty -and $null -ne $statusCodeProperty.Value) {
+                return [int]$statusCodeProperty.Value
+            }
+        }
+
+        $exception = $exception.InnerException
+    }
+
+    return $null
+}
+
+function Invoke-UpdateHttpRequest {
+    param (
+        [Parameter(Mandatory)]
+        [scriptblock]$Request
+    )
+
+    $maxRetries = 3
+    for ($retryCount = 0; ; $retryCount++) {
+        try {
+            return & $Request
+        }
+        catch {
+            $statusCode = Get-UpdateHttpStatusCode -ErrorRecord $_
+            if ($null -eq $statusCode -or
+                $statusCode -lt 500 -or
+                $statusCode -gt 599 -or
+                $retryCount -ge $maxRetries) {
+                throw
+            }
+
+            $retryNumber = $retryCount + 1
+            $baseDelayMilliseconds = [int][Math]::Pow(2, $retryCount) * 1000
+            $minimumDelayMilliseconds = [int]($baseDelayMilliseconds / 2)
+            $delayMilliseconds = Get-Random `
+                -Minimum $minimumDelayMilliseconds `
+                -Maximum ($baseDelayMilliseconds + 1)
+            Write-Warning "HTTP request returned $statusCode; retry $retryNumber of $maxRetries in $delayMilliseconds ms."
+            Start-Sleep -Milliseconds $delayMilliseconds
+        }
+    }
+}
+
 function Get-LatestGitHubStableRelease {
     param (
         [Parameter(Mandatory)]
@@ -64,10 +118,12 @@ function Get-LatestGitHubStableRelease {
         [string]$ComponentName
     )
 
-    $release = Invoke-RestMethod `
-        -Uri "https://api.github.com/repos/$Repository/releases/latest" `
-        -Headers (Get-UpdateRequestHeaders) `
-        -ErrorAction Stop
+    $release = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/$Repository/releases/latest" `
+            -Headers (Get-UpdateRequestHeaders) `
+            -ErrorAction Stop
+    }
     if ($release.draft -or $release.prerelease -or [string]::IsNullOrWhiteSpace($release.tag_name)) {
         throw "GitHub did not return a valid stable $ComponentName release."
     }
@@ -110,7 +166,9 @@ function Invoke-UpdateDownload {
         }
     }
 
-    Invoke-WebRequest -Uri $downloadUri.AbsoluteUri -OutFile $OutFile -ErrorAction Stop | Out-Null
+    Invoke-UpdateHttpRequest -Request {
+        Invoke-WebRequest -Uri $downloadUri.AbsoluteUri -OutFile $OutFile -ErrorAction Stop | Out-Null
+    }
 
     foreach ($expectedHash in $ExpectedHashes) {
         $algorithm = ([string]$expectedHash.Algorithm).ToUpperInvariant()

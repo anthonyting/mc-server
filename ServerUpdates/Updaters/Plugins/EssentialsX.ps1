@@ -9,7 +9,9 @@ function Get-EssentialsXLatestSnapshotVersion {
     $snapshotVersionPattern = '^\d+\.\d+\.\d+-SNAPSHOT$'
     $snapshotQualifierPattern = '-SNAPSHOT$'
     $artifactUrl = "$script:EssentialsXSnapshotRepositoryRoot/$ArtifactName"
-    $metadata = Invoke-RestMethod -Uri "$artifactUrl/maven-metadata.xml" -ErrorAction Stop
+    $metadata = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod -Uri "$artifactUrl/maven-metadata.xml" -ErrorAction Stop
+    }
     $snapshotVersions = @($metadata.metadata.versioning.versions.version) |
         ForEach-Object { [string]$_ } |
         Where-Object { $_ -match $snapshotVersionPattern }
@@ -39,7 +41,9 @@ function Get-EssentialsXSnapshotArtifact {
 
     $repositoryUrl = "$script:EssentialsXSnapshotRepositoryRoot/$ArtifactName/$SnapshotVersion"
     $metadataUrl = "$repositoryUrl/maven-metadata.xml"
-    $metadata = Invoke-RestMethod -Uri $metadataUrl -ErrorAction Stop
+    $metadata = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod -Uri $metadataUrl -ErrorAction Stop
+    }
     $snapshotArtifact = $metadata.metadata.versioning.snapshotVersions.snapshotVersion |
         Where-Object {
             $_.extension -eq "jar" -and
@@ -58,7 +62,9 @@ function Get-EssentialsXSnapshotArtifact {
 
     $fileName = "$ArtifactName-$artifactVersion.jar"
     $checksumUri = "$repositoryUrl/$fileName.sha256"
-    $checksum = [string](Invoke-RestMethod -Uri $checksumUri -ErrorAction Stop)
+    $checksum = [string](Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod -Uri $checksumUri -ErrorAction Stop
+    })
     $checksumValue = $checksum.Trim()
     if ($checksumValue -notmatch '^[0-9a-fA-F]{64}$') {
         throw "Missing or invalid SHA-256 verification metadata for $fileName."

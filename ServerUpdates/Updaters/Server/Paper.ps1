@@ -15,7 +15,9 @@ function Get-HighestVersion {
 
                 # Check that a valid build is available for this version.
                 $versionInfoUrl = "$script:PaperApiRoot/versions/$v"
-                $versionInfo = Invoke-RestMethod -Uri $versionInfoUrl -Headers $Headers -ErrorAction Stop
+                $versionInfo = Invoke-UpdateHttpRequest -Request {
+                    Invoke-RestMethod -Uri $versionInfoUrl -Headers $Headers -ErrorAction Stop
+                }
                 if ($versionInfo.builds.Count -eq 0) {
                     throw "$v has no valid builds"
                 }
@@ -45,7 +47,9 @@ function Update-Paper {
 
     $paperFileName = "paper.jar"
     $projectUrl = $script:PaperApiRoot
-    $project = Invoke-RestMethod -Uri $projectUrl -Headers $headers -ErrorAction Stop
+    $project = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod -Uri $projectUrl -Headers $headers -ErrorAction Stop
+    }
 
     $versions = $project.versions.$versionGroup
     if ($null -eq $versions) {
@@ -56,7 +60,9 @@ function Update-Paper {
 
     Write-Host "Getting build info for version $highestVersion.."
     $latestBuildUrl = "$script:PaperApiRoot/versions/$highestVersion/builds/latest"
-    $latestBuildInfo = Invoke-RestMethod -Uri $latestBuildUrl -Headers $headers -ErrorAction Stop
+    $latestBuildInfo = Invoke-UpdateHttpRequest -Request {
+        Invoke-RestMethod -Uri $latestBuildUrl -Headers $headers -ErrorAction Stop
+    }
     if ($latestBuildInfo.channel -ne "STABLE") {
         throw "Paper returned a non-stable build for Minecraft $highestVersion; refusing to update."
     }

@@ -687,3 +687,140 @@ Describe "Plugin metrics configuration" {
         Get-Content -Path "plugins/bStats/config.yml" -Raw | Should Match '(?m)^enabled: false\s*$'
     }
 }
+
+Describe "Update-All failure handling" {
+    It "stops later updates and restores the window title after an updater fails" {
+        $windowTitle = "TestServer"
+        Mock Update-Paper -ModuleName ServerUpdates {}
+        Mock Update-PersonalPlugins -ModuleName ServerUpdates {
+            Write-Error "504 Gateway Timeout"
+        }
+        Mock Update-LuckPerms -ModuleName ServerUpdates {}
+        Mock Update-Vault -ModuleName ServerUpdates {}
+        Mock Update-EssentialsX -ModuleName ServerUpdates {}
+
+        { Update-All -windowTitle $windowTitle -versionGroup "1.21" -debug $false } | Should Throw
+
+        Assert-MockCalled Update-LuckPerms -ModuleName ServerUpdates -Times 0
+        Assert-MockCalled Update-Vault -ModuleName ServerUpdates -Times 0
+        Assert-MockCalled Update-EssentialsX -ModuleName ServerUpdates -Times 0
+        $Host.UI.RawUI.WindowTitle | Should Be $windowTitle
+    }
+}
+
+Describe "HTTP request retries" {
+    BeforeEach {
+        $global:updateHttpRequestCount = 0
+        $global:updateHttpRetryDelays = @()
+    }
+
+    It "retries 5xx responses up to success with exponential backoff" {
+        Mock Invoke-RestMethod -ModuleName ServerUpdates {
+            $global:updateHttpRequestCount++
+            if ($global:updateHttpRequestCount -lt 3) {
+                $exception = New-Object System.Exception "503 Service Unavailable"
+                $exception | Add-Member -MemberType NoteProperty -Name Response -Value ([pscustomobject]@{
+                    StatusCode = 503
+                })
+                throw $exception
+            }
+
+            return [pscustomobject]@{
+                draft = $false
+                prerelease = $false
+                tag_name = "v1.0.0"
+            }
+        }
+        Mock Start-Sleep -ModuleName ServerUpdates {
+            $global:updateHttpRetryDelays += $Milliseconds
+        }
+
+        $release = & (Get-Module ServerUpdates) {
+            Get-LatestGitHubStableRelease -Repository "anthonyting/personal-plugins" -ComponentName "PersonalPlugins"
+        }
+
+        $release.tag_name | Should Be "v1.0.0"
+        $global:updateHttpRequestCount | Should Be 3
+        $global:updateHttpRetryDelays.Count | Should Be 2
+        ($global:updateHttpRetryDelays[0] -ge 500 -and $global:updateHttpRetryDelays[0] -le 1000) | Should Be $true
+        ($global:updateHttpRetryDelays[1] -ge 1000 -and $global:updateHttpRetryDelays[1] -le 2000) | Should Be $true
+    }
+
+    It "retries 5xx responses from Invoke-WebRequest" {
+        Mock Invoke-WebRequest -ModuleName ServerUpdates {
+            $global:updateHttpRequestCount++
+            if ($global:updateHttpRequestCount -eq 1) {
+                $exception = New-Object System.Exception "502 Bad Gateway"
+                $exception | Add-Member -MemberType NoteProperty -Name Response -Value ([pscustomobject]@{
+                    StatusCode = 502
+                })
+                throw $exception
+            }
+
+            return "downloaded"
+        }
+        Mock Start-Sleep -ModuleName ServerUpdates {
+            $global:updateHttpRetryDelays += $Milliseconds
+        }
+
+        $response = & (Get-Module ServerUpdates) {
+            Invoke-UpdateHttpRequest -Request {
+                Invoke-WebRequest -Uri "https://example.com/artifact.jar" -ErrorAction Stop
+            }
+        }
+
+        $response | Should Be "downloaded"
+        $global:updateHttpRequestCount | Should Be 2
+        $global:updateHttpRetryDelays.Count | Should Be 1
+        ($global:updateHttpRetryDelays[0] -ge 500 -and $global:updateHttpRetryDelays[0] -le 1000) | Should Be $true
+    }
+
+    It "stops after three retries when 5xx responses persist" {
+        Mock Invoke-RestMethod -ModuleName ServerUpdates {
+            $global:updateHttpRequestCount++
+            $exception = New-Object System.Exception "503 Service Unavailable"
+            $exception | Add-Member -MemberType NoteProperty -Name Response -Value ([pscustomobject]@{
+                StatusCode = 503
+            })
+            throw $exception
+        }
+        Mock Start-Sleep -ModuleName ServerUpdates {
+            $global:updateHttpRetryDelays += $Milliseconds
+        }
+
+        {
+            & (Get-Module ServerUpdates) {
+                Get-LatestGitHubStableRelease -Repository "anthonyting/personal-plugins" -ComponentName "PersonalPlugins"
+            }
+        } | Should Throw
+
+        $global:updateHttpRequestCount | Should Be 4
+        $global:updateHttpRetryDelays.Count | Should Be 3
+        ($global:updateHttpRetryDelays[0] -ge 500 -and $global:updateHttpRetryDelays[0] -le 1000) | Should Be $true
+        ($global:updateHttpRetryDelays[1] -ge 1000 -and $global:updateHttpRetryDelays[1] -le 2000) | Should Be $true
+        ($global:updateHttpRetryDelays[2] -ge 2000 -and $global:updateHttpRetryDelays[2] -le 4000) | Should Be $true
+    }
+
+    It "does not retry non-5xx HTTP errors" {
+        Mock Invoke-RestMethod -ModuleName ServerUpdates {
+            $global:updateHttpRequestCount++
+            $exception = New-Object System.Exception "404 Not Found"
+            $exception | Add-Member -MemberType NoteProperty -Name Response -Value ([pscustomobject]@{
+                StatusCode = 404
+            })
+            throw $exception
+        }
+        Mock Start-Sleep -ModuleName ServerUpdates {
+            $global:updateHttpRetryDelays += $Milliseconds
+        }
+
+        {
+            & (Get-Module ServerUpdates) {
+                Get-LatestGitHubStableRelease -Repository "anthonyting/personal-plugins" -ComponentName "PersonalPlugins"
+            }
+        } | Should Throw
+
+        $global:updateHttpRequestCount | Should Be 1
+        $global:updateHttpRetryDelays.Count | Should Be 0
+    }
+}

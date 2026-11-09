@@ -16,19 +16,24 @@ function Update-All {
         $debug
     )
 
+    $ErrorActionPreference = "Stop"
     $Host.UI.RawUI.WindowTitle = $windowTitle + " - Updating"
-    if ($debug) {
-        Write-Host "Debug mode: using Spigot instead of Paper"
-        Update-Spigot
+    try {
+        if ($debug) {
+            Write-Host "Debug mode: using Spigot instead of Paper"
+            Update-Spigot
+        }
+        else {
+            Update-Paper $versionGroup
+        }
+        Update-PersonalPlugins
+        Update-LuckPerms -versionGroup $versionGroup
+        Update-Vault -versionGroup $versionGroup
+        Update-EssentialsX -versionGroup $versionGroup
     }
-    else {
-        Update-Paper $versionGroup
+    finally {
+        $Host.UI.RawUI.WindowTitle = $windowTitle
     }
-    Update-PersonalPlugins
-    Update-LuckPerms -versionGroup $versionGroup
-    Update-Vault -versionGroup $versionGroup
-    Update-EssentialsX -versionGroup $versionGroup
-    $Host.UI.RawUI.WindowTitle = $windowTitle
 }
 
 Export-ModuleMember -Function Update-All, Update-Paper, Update-Spigot, Update-LuckPerms, Update-Vault, Update-EssentialsX, Update-PersonalPlugins, Disable-PluginMetrics
